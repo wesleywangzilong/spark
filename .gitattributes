@@ -1,0 +1,24 @@
+# Enforce consistent line endings regardless of core.autocrlf on each machine.
+# Reason: dist/ is upstream-committed build output. Local rebuilds and
+# Windows autocrlf can introduce CRLF/LF noise that pollutes diffs and blocks
+# clean upstream sync. This fork does not merge back to upstream, so overriding
+# attributes here is safe.
+
+# Default: treat text files as LF in the repo and working tree.
+* text=auto eol=lf
+
+# Build outputs: byte-exact, always LF, never EOL-mangled.
+dist/** text eol=lf
+
+# Binary assets stay binary.
+*.wasm  binary
+*.ply   binary
+*.splat binary
+*.spz   binary
+*.ksplat binary
+*.sog   binary
+*.rad   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
