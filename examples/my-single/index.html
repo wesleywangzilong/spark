@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+    <link rel="icon" href="data:,">
+    <title>spark · my-single</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            overflow: hidden;
+            height: 100%;
+            overscroll-behavior: none;
+        }
+        canvas { display: block; }
+        #hud {
+            position: fixed;
+            top: 8px;
+            left: 8px;
+            padding: 6px 10px;
+            background: rgba(0, 0, 0, 0.55);
+            color: #0f0;
+            font-family: monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            border-radius: 4px;
+            pointer-events: none;
+            z-index: 10;
+            white-space: pre;
+        }
+        #err {
+            position: fixed;
+            top: 50%;
+            left: 8px;
+            right: 8px;
+            transform: translateY(-50%);
+            padding: 12px;
+            background: rgba(128, 0, 0, 0.85);
+            color: #fff;
+            font-family: monospace;
+            font-size: 12px;
+            border-radius: 4px;
+            z-index: 20;
+            display: none;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        #bench-overlay {
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.92);
+            color: #0f0;
+            padding: 18px 24px;
+            border-radius: 8px;
+            z-index: 30;
+            font-family: monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            max-width: 92vw;
+            pointer-events: auto;
+            border: 1px solid #0f0;
+        }
+        #bench-overlay button {
+            padding: 8px 18px;
+            background: #0f0; color: #000;
+            border: none; border-radius: 4px;
+            cursor: pointer;
+            font-family: monospace;
+            font-size: 13px;
+        }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "../js/vendor/three/build/three.module.js",
+        "three/addons/": "../js/vendor/three/examples/jsm/",
+        "@sparkjsdev/spark": "../../dist/spark.module.js"
+      }
+    }
+    </script>
+</head>
+<body>
+    <div id="hud">loading...</div>
+    <div id="err"></div>
+    <script type="module">
+        import * as THREE from "three";
+        import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
+        import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+        const hud = document.getElementById('hud');
+        const err = document.getElementById('err');
+        const showError = (prefix, e) => {
+            err.style.display = 'block';
+            err.textContent = prefix + ': ' + (e?.stack || e?.message || String(e));
+        };
+        window.addEventListener('error', (e) => showError('ERROR', e.error || e));
+        window.addEventListener('unhandledrejection', (e) => showError('UNHANDLED', e.reason));
+
+        // --- URL params from RendererActivity ---
+        const params = new URLSearchParams(location.search);
+        const url = params.get('url');
+        const paged = params.get('paged') === 'true';
+        const isBenchmark = params.get('mode') === 'benchmark';
+        if (!url) {
+            showError('CONFIG', 'missing ?url=… query parameter');
+            throw new Error('my-single requires url query parameter');
+        }
+        const fileName = url.split('?')[0].split('/').pop();
+
+        // --- Scene setup ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 0, 3);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const spark = new SparkRenderer({ renderer });
+        scene.add(spark);
+
+        // OrbitControls — single-finger = orbit, two-finger pinch = dolly,
+        // two-finger parallel drag = pan. Disabled in benchmark mode so the
+        // camera is fixed and runs are reproducible.
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.1;
+        controls.minDistance = 0.5;
+        controls.maxDistance = 20;
+        controls.target.set(0, 0, -2);
+        if (isBenchmark) {
+            controls.enabled = false;
+        }
+        controls.update();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // --- Load splat ---
+        const splat = new SplatMesh({ url, paged });
+        // X-axis 180° flip — Spark splat files store coordinates in a Y-down
+        // frame (training convention); three.js is Y-up. Same trick as
+        // my-hello / hello-world. Without this the model renders inverted.
+        splat.quaternion.set(1, 0, 0, 0);
+        splat.position.set(0, 0, -2);
+        scene.add(splat);
+
+        // --- Benchmark sampling state ---
+        // Layout: [0…WARMUP_MS) skip (JIT / decode jitter)
+        //         [WARMUP_MS … WARMUP_MS+SAMPLE_MS) record dt + GPU + heap
+        //         then send report once and freeze further sampling.
+        const WARMUP_MS = 2000;
+        const SAMPLE_MS = 28000;
+        let benchStartTime = null;     // perf.now() of first rAF after page load
+        const benchFrameTimes = [];
+        const benchGpuTimes = [];
+        let benchPeakHeap = 0;
+        let benchSent = false;
+
+        const gl = renderer.getContext();
+        const gpuExt = isBenchmark ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;
+        const queryRing = gpuExt
+            ? [gl.createQuery(), gl.createQuery(), gl.createQuery()]
+            : null;
+        let qHead = 0;
+
+        // Most-recent values, used by the live HUD during benchmark. Distinct
+        // from the windowed arrays above which only fill during sampling.
+        let lastGpuMs = null;
+        let lastHeapBytes = null;
+
+        // --- HUD / FPS / animation loop ---
+        let lastTime;
+        let frames = 0;
+        let fpsWindowStart = performance.now();
+        let lastFps = 0;
+        let lastFrameMs = 0;
+
+        renderer.setAnimationLoop(function animate(time) {
+            const deltaTime = time - (lastTime || time);
+            lastTime = time;
+            controls.update();
+
+            // Auto-rotate the splat in benchmark mode. This forces the depth
+            // sort + index upload (stage ⑤ in plan §M4.0) to fire every frame,
+            // giving more realistic FPS numbers than a static scene where the
+            // sort cache hits on the first frame and never re-triggers.
+            // ~25 s per revolution. Camera stays put so .rad LoD doesn't
+            // re-stream — that's a v2 feature with camera-path.
+            if (isBenchmark) {
+                splat.rotation.y += deltaTime / 4000;
+            }
+
+            // GPU timer query: collect previous result first (async, no stall),
+            // then issue the new one around the draw call.
+            if (gpuExt && queryRing) {
+                const qPrev = queryRing[(qHead + 1) % queryRing.length];
+                if (gl.getQueryParameter(qPrev, gl.QUERY_RESULT_AVAILABLE)
+                        && !gl.getParameter(gpuExt.GPU_DISJOINT_EXT)) {
+                    const ns = gl.getQueryParameter(qPrev, gl.QUERY_RESULT);
+                    const ms = ns / 1e6;
+                    lastGpuMs = ms;
+                    if (benchStartTime !== null) {
+                        const e = time - benchStartTime;
+                        if (e >= WARMUP_MS && e < WARMUP_MS + SAMPLE_MS) {
+                            benchGpuTimes.push(ms);
+                        }
+                    }
+                }
+                gl.beginQuery(gpuExt.TIME_ELAPSED_EXT, queryRing[qHead]);
+            }
+
+            renderer.render(scene, camera);
+
+            if (gpuExt && queryRing) {
+                gl.endQuery(gpuExt.TIME_ELAPSED_EXT);
+                qHead = (qHead + 1) % queryRing.length;
+            }
+
+            // Read heap every frame (cheap) so the HUD stays live; the
+            // windowed peak only updates inside the sample window.
+            if (performance.memory) {
+                lastHeapBytes = performance.memory.usedJSHeapSize;
+            }
+
+            // Benchmark sampling
+            if (isBenchmark && !benchSent) {
+                if (benchStartTime === null) {
+                    benchStartTime = time;
+                }
+                const e = time - benchStartTime;
+                if (e >= WARMUP_MS && e < WARMUP_MS + SAMPLE_MS) {
+                    benchFrameTimes.push(deltaTime);
+                    if (lastHeapBytes !== null) {
+                        benchPeakHeap = Math.max(benchPeakHeap, lastHeapBytes);
+                    }
+                }
+                if (e >= WARMUP_MS + SAMPLE_MS) {
+                    benchSent = true;
+                    sendBenchmarkReport();
+                }
+            }
+
+            // HUD
+            frames++;
+            lastFrameMs = deltaTime;
+            const elapsed = time - fpsWindowStart;
+            if (elapsed >= 500) {
+                lastFps = Math.round((frames * 1000) / elapsed);
+                frames = 0;
+                fpsWindowStart = time;
+                if (isBenchmark && benchStartTime !== null && !benchSent) {
+                    const remainMs = Math.max(0, WARMUP_MS + SAMPLE_MS - (time - benchStartTime));
+                    const phase = (time - benchStartTime) < WARMUP_MS ? 'warmup' : 'sampling';
+                    const lines = [
+                        '⌚ Benchmark · ' + phase,
+                        '剩余: ' + (remainMs / 1000).toFixed(1) + 's',
+                        'FPS: ' + lastFps,
+                        'frame: ' + lastFrameMs.toFixed(1) + 'ms',
+                        'res: ' + renderer.domElement.width + '×' + renderer.domElement.height,
+                    ];
+                    if (lastHeapBytes !== null) {
+                        lines.push('heap: ' + (lastHeapBytes / 1024 / 1024).toFixed(0) + 'MB');
+                    }
+                    if (lastGpuMs !== null) {
+                        lines.push('GPU: ' + lastGpuMs.toFixed(1) + 'ms');
+                    }
+                    hud.textContent = lines.join('\n');
+                } else if (!isBenchmark) {
+                    hud.textContent =
+                        'file: ' + fileName +
+                        '\nstreaming: ' + paged +
+                        '\nFPS: ' + lastFps +
+                        '\nframe: ' + lastFrameMs.toFixed(1) + 'ms' +
+                        '\nres: ' + renderer.domElement.width + 'x' + renderer.domElement.height;
+                }
+            }
+        });
+
+        function percentile(arr, p) {
+            if (arr.length === 0) return 0;
+            const sorted = [...arr].sort((a, b) => a - b);
+            return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
+        }
+
+        function sendBenchmarkReport() {
+            const summary = {
+                load_first_frame_ms: Math.round(benchStartTime || 0),
+                sample_window_ms: SAMPLE_MS,
+                sample_frame_count: benchFrameTimes.length,
+                avg_fps: 1000 * benchFrameTimes.length / SAMPLE_MS,
+                p50_frame_ms: percentile(benchFrameTimes, 0.5),
+                p95_frame_ms: percentile(benchFrameTimes, 0.95),
+                p99_frame_ms: percentile(benchFrameTimes, 0.99),
+                max_frame_ms: percentile(benchFrameTimes, 1.0),
+                js_heap_peak_bytes: benchPeakHeap || null,
+                gpu_p50_ms: benchGpuTimes.length ? percentile(benchGpuTimes, 0.5) : null,
+                gpu_p95_ms: benchGpuTimes.length ? percentile(benchGpuTimes, 0.95) : null,
+                gpu_valid_query_count: benchGpuTimes.length,
+                paint_width: renderer.domElement.width,
+                paint_height: renderer.domElement.height,
+                user_agent: navigator.userAgent,
+            };
+
+            // Java side — RendererActivity has done addJavascriptInterface
+            // when entering benchmark mode. If it's missing (Windows dev
+            // server, etc), the overlay still shows so the user can read
+            // numbers off the screen.
+            if (window.SparkBench && typeof window.SparkBench.report === 'function') {
+                try {
+                    window.SparkBench.report(JSON.stringify(summary));
+                } catch (e) {
+                    console.warn('SparkBench.report failed:', e);
+                }
+            }
+            showBenchmarkOverlay(summary);
+        }
+
+        function showBenchmarkOverlay(s) {
+            const div = document.createElement('div');
+            div.id = 'bench-overlay';
+            const lines = [
+                '✓ Benchmark 完成',
+                '',
+                '采样: ' + (s.sample_window_ms / 1000).toFixed(0) + 's · ' + s.sample_frame_count + ' 帧',
+                '平均 FPS: ' + s.avg_fps.toFixed(1),
+                '帧时(ms): p50=' + s.p50_frame_ms.toFixed(1)
+                          + ' p95=' + s.p95_frame_ms.toFixed(1)
+                          + ' p99=' + s.p99_frame_ms.toFixed(1)
+                          + ' max=' + s.max_frame_ms.toFixed(1),
+            ];
+            if (s.gpu_valid_query_count > 0) {
+                lines.push('GPU(ms): p50=' + s.gpu_p50_ms.toFixed(1)
+                          + ' p95=' + s.gpu_p95_ms.toFixed(1)
+                          + ' (' + s.gpu_valid_query_count + ' 样本)');
+            } else {
+                lines.push('GPU 计时: 不可用 (timer query 不支持 / 全 disjoint)');
+            }
+            if (s.js_heap_peak_bytes != null) {
+                lines.push('JS heap 峰值: ' + (s.js_heap_peak_bytes / 1024 / 1024).toFixed(0) + ' MB');
+            }
+            lines.push('分辨率: ' + s.paint_width + '×' + s.paint_height);
+
+            div.innerHTML = lines.map(l => '<div>' + l + '</div>').join('') +
+                '<div style="margin-top:14px;text-align:center;">' +
+                '<button id="bench-close">关闭</button></div>';
+            document.body.appendChild(div);
+            document.getElementById('bench-close').onclick = () => {
+                div.remove();
+                controls.enabled = true;  // re-enable manual camera after viewing
+            };
+        }
+    </script>
+</body>
+</html>

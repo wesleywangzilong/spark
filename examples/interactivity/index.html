@@ -25,7 +25,7 @@
     {
       "imports": {
         "three": "../js/vendor/three/build/three.module.js",
-        "three/addons/": "/examples/js/vendor/three/examples/jsm/",
+        "three/addons/": "../js/vendor/three/examples/jsm/",
         "@sparkjsdev/spark": "../../dist/spark.module.js"
       }
     }
@@ -38,7 +38,7 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { FOOD_ASSETS, FOOD_URL } from './food.js';
     import { getAssetFileURL } from "../js/get-asset-url.js";
-    import { preloadSplats } from "/examples/js/preloader.js";
+    import { preloadSplats } from "../js/preloader.js";
 
     // Add food items to the menu
     FOOD_ASSETS.forEach((food, i) => {

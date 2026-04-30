@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <link rel="icon" href="data:,">
+    <title>sparkapp · 示例清单</title>
+    <style>
+        /* ===== reset ===== */
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            min-height: 100%;
+        }
+        body {
+            background: #0a0a0a;
+            color: #ccc;
+            font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+            font-size: 14px;
+            overscroll-behavior: none;
+        }
+        a {
+            color: inherit;
+            text-decoration: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* ===== tokens ===== */
+        :root {
+            --sidebar-w: 320px;
+            --accent: #0f0;
+            --mobile-header-h: 3rem;
+        }
+
+        /* ===== mode switch =====
+           body.landing         → no hash, show grid as main content
+           body:not(.landing)   → hash present, show sidebar + iframe
+        */
+        body.landing {
+            overflow-y: auto;
+            height: auto;
+        }
+        body:not(.landing) {
+            height: 100%;
+            overflow: hidden;
+        }
+        body.landing .sidebar,
+        body.landing .content,
+        body.landing .mobile-header,
+        body.landing .mobile-overlay { display: none !important; }
+        body:not(.landing) .app-header,
+        body:not(.landing) .landing-view { display: none !important; }
+
+        /* ===== app header (landing mode only) ===== */
+        .app-header {
+            padding: 28px 32px 20px;
+            border-bottom: 1px solid #1a1a1a;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .app-header h1 {
+            margin: 0;
+            font-family: monospace;
+            font-size: 22px;
+            color: var(--accent);
+            letter-spacing: 0.02em;
+        }
+        .app-header .subtitle {
+            margin: 6px 0 14px;
+            font-size: 13px;
+            color: #888;
+        }
+        .app-header .legend {
+            display: flex;
+            gap: 18px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            color: #888;
+        }
+        .app-header .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* ===== landing view (grid) ===== */
+        .landing-view {
+            padding: 18px 32px 48px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .landing-view .group { margin-top: 26px; }
+        .landing-view .group:first-child { margin-top: 8px; }
+        .landing-view .group-title {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            padding: 0 4px 8px;
+            border-bottom: 1px dashed #222;
+            margin-bottom: 10px;
+            font-family: monospace;
+            color: #bbb;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .landing-view .group-title .count {
+            color: #444;
+            font-size: 11px;
+        }
+        .landing-view .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 10px;
+        }
+
+        /* ===== sidebar (example mode) ===== */
+        .sidebar {
+            position: fixed;
+            top: 0; left: 0; bottom: 0;
+            width: var(--sidebar-w);
+            background: #0a0a0a;
+            border-right: 1px solid #1a1a1a;
+            display: flex;
+            flex-direction: column;
+            z-index: 10;
+        }
+        .sidebar-header {
+            padding: 10px 14px;
+            border-bottom: 1px solid #1a1a1a;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .home-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 5px 9px;
+            background: #141414;
+            border: 1px solid #2a2a2a;
+            border-radius: 4px;
+            color: var(--accent);
+            font-family: monospace;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .home-btn:hover { background: #1c1c1c; border-color: var(--accent); }
+        .sidebar-header .brand {
+            font-family: monospace;
+            font-size: 12px;
+            color: #666;
+        }
+        .sidebar-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 6px 10px 24px;
+        }
+        .sidebar .group { margin-top: 12px; }
+        .sidebar .group:first-child { margin-top: 2px; }
+        .sidebar .group-title {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 6px;
+            margin-bottom: 4px;
+            font-family: monospace;
+            color: #777;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .sidebar .group-title .count { color: #3a3a3a; }
+        .sidebar .cards {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        /* ===== cards (shared) ===== */
+        .card {
+            display: block;
+            background: #141414;
+            border: 1px solid #222;
+            border-radius: 6px;
+            padding: 9px 12px;
+            cursor: pointer;
+            transition: background 0.1s, border-color 0.1s;
+        }
+        .card:hover { background: #181818; }
+        .card.active {
+            background: #1c1c1c;
+            border-color: var(--accent);
+        }
+        .card-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-title {
+            color: #eee;
+            font-weight: 500;
+            font-size: 13px;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .card.active .card-title { color: #fff; }
+        .card-desc {
+            margin-top: 4px;
+            font-size: 11px;
+            color: #888;
+            line-height: 1.45;
+        }
+        .card-note {
+            margin-top: 4px;
+            font-size: 10px;
+            color: #b89000;
+            font-family: monospace;
+            line-height: 1.4;
+        }
+
+        /* Landing cards are slightly more spacious. */
+        .landing-view .card { padding: 11px 14px; }
+        .landing-view .card-title { font-size: 14px; }
+        .landing-view .card-desc { font-size: 12px; }
+
+        /* ===== badges ===== */
+        .badge {
+            display: inline-block;
+            font-size: 10px;
+            font-family: monospace;
+            padding: 1px 5px;
+            border-radius: 3px;
+            flex-shrink: 0;
+            line-height: 1.4;
+        }
+        .badge-ok   { background: rgba(0,255,0,0.12);   color: #0f0;    }
+        .badge-warn { background: rgba(255,200,0,0.15); color: #ffc700; }
+
+        /* ===== tag chips (asset format + role, below description) ===== */
+        .card-tags {
+            margin-top: 6px;
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+        .tag {
+            font-size: 10px;
+            padding: 1px 6px;
+            border-radius: 3px;
+            background: rgba(0, 255, 0, 0.08);
+            color: #0f0;
+            font-family: monospace;
+            line-height: 1.5;
+        }
+
+        /* ===== format filter bar (landing header) ===== */
+        .filter-bar {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        .filter-label {
+            font-size: 11px;
+            color: #666;
+            font-family: monospace;
+            align-self: center;
+            margin-right: 2px;
+        }
+        .filter-btn {
+            padding: 3px 10px;
+            background: #141414;
+            border: 1px solid #2a2a2a;
+            border-radius: 3px;
+            color: #888;
+            font-family: monospace;
+            font-size: 11px;
+            cursor: pointer;
+            transition: background 0.1s, border-color 0.1s, color 0.1s;
+        }
+        .filter-btn:hover { color: #ccc; border-color: #3a3a3a; }
+        .filter-btn.active {
+            background: rgba(0, 255, 0, 0.1);
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+        .filter-btn .n { opacity: 0.55; margin-left: 4px; font-size: 10px; }
+        .card.hidden-by-filter { display: none; }
+        .landing-view .group.empty-by-filter { display: none; }
+
+        /* ===== content / iframe (example mode) ===== */
+        .content {
+            position: fixed;
+            top: 0; right: 0; bottom: 0;
+            left: var(--sidebar-w);
+            background: #000;
+        }
+        .example-frame {
+            width: 100%;
+            height: 100%;
+            border: 0;
+            display: block;
+            background: #000;
+        }
+
+        /* ===== mobile header (example mode only) ===== */
+        .mobile-header { display: none; }
+        .mobile-overlay { display: none; }
+
+        @media screen and (max-width: 768px) {
+            /* Landing on mobile: single-column grid, tighter padding. */
+            .app-header { padding: 18px 16px 14px; }
+            .app-header h1 { font-size: 18px; }
+            .landing-view { padding: 10px 16px 40px; }
+            .landing-view .cards { grid-template-columns: 1fr; }
+
+            /* Example mode: hamburger bar + drawer sidebar. */
+            body:not(.landing) .mobile-header {
+                display: flex;
+                position: fixed;
+                top: 0; left: 0; right: 0;
+                height: var(--mobile-header-h);
+                background: #0a0a0a;
+                border-bottom: 1px solid #1a1a1a;
+                align-items: center;
+                padding: 0 12px;
+                gap: 10px;
+                z-index: 100;
+            }
+            .hamburger {
+                width: 28px; height: 28px;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                gap: 4px;
+                cursor: pointer;
+            }
+            .hamburger span {
+                height: 2px;
+                background: var(--accent);
+                border-radius: 1px;
+            }
+            .mobile-header .home-btn { font-size: 10px; padding: 4px 7px; }
+            .mobile-header .title {
+                color: var(--accent);
+                font-family: monospace;
+                font-size: 12px;
+                flex: 1;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            body:not(.landing) .sidebar {
+                top: var(--mobile-header-h);
+                width: 85%;
+                max-width: 340px;
+                transform: translateX(-100%);
+                transition: transform 0.2s ease-out;
+            }
+            body:not(.landing) .sidebar.open { transform: translateX(0); }
+            body:not(.landing) .sidebar-header { display: none; }
+
+            body:not(.landing) .content {
+                top: var(--mobile-header-h);
+                left: 0;
+            }
+
+            body:not(.landing) .mobile-overlay {
+                display: block;
+                position: fixed;
+                top: var(--mobile-header-h);
+                left: 0; right: 0; bottom: 0;
+                background: rgba(0,0,0,0.6);
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.2s;
+                z-index: 9;
+            }
+            body:not(.landing) .mobile-overlay.open {
+                opacity: 1;
+                pointer-events: auto;
+            }
+        }
+    </style>
+</head>
+<body class="landing">
+
+    <!-- ========== Landing mode: header + grid ========== -->
+    <header class="app-header">
+        <h1>sparkapp examples</h1>
+        <p class="subtitle"><span id="exampleCount"></span>按功能分组 · 标注 Android WebView 可移植性 · 点击进入</p>
+        <div class="legend">
+            <span class="legend-item"><span class="badge badge-ok">✅</span> 可移植</span>
+            <span class="legend-item"><span class="badge badge-warn">⚠️</span> 条件可移植(CDN / 大素材 / 性能风险)</span>
+        </div>
+        <div class="filter-bar" id="formatFilter"></div>
+    </header>
+
+    <main class="landing-view">
+        <div id="landingList"></div>
+    </main>
+
+    <!-- ========== Example mode: mobile bar + sidebar + iframe ========== -->
+    <div class="mobile-header">
+        <a class="home-btn" href="#" id="homeBtnMobile">← 主页</a>
+        <div class="hamburger" id="hamburger">
+            <span></span><span></span><span></span>
+        </div>
+        <div class="title" id="mobileTitle">sparkapp</div>
+    </div>
+
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <a class="home-btn" href="#" id="homeBtnDesktop">← 返回主页</a>
+            <span class="brand">sparkapp</span>
+        </div>
+        <div class="sidebar-body" id="sidebarList"></div>
+    </aside>
+
+    <div class="mobile-overlay" id="overlay"></div>
+
+    <main class="content">
+        <iframe class="example-frame" id="frame" allow="xr-spatial-tracking; accelerometer; gyroscope"></iframe>
+    </main>
+
+    <script>
+        // Example catalog grouped by functional purpose.
+        // Fields:
+        //   id    — unique hash id
+        //   path  — relative path to example's index.html (must include filename,
+        //           not trailing slash, for WebViewAssetLoader compatibility)
+        //   port  — portability: 'ok' | 'warn' | 'no'
+        //   note  — optional caveat shown below description
+        const GROUPS = [
+            {
+                id: 'mine', title: '我的实验', items: [
+                    { id: 'my-hello', path: '../my-hello/index.html',
+                      title: 'Hello Butterfly',
+                      desc: '最小链路:butterfly.spz 自转 + HUD 显示 FPS / 分辨率 / DPR。',
+                      port: 'ok', tags: ['spz', 'baseline'] }
+                ]
+            },
+            {
+                id: 'A', title: 'A. 入门与调试', items: [
+                    { id: 'hello-world', path: '../hello-world/index.html',
+                      title: 'Hello World',
+                      desc: 'Spark 最小样本,butterfly.spz 绕 Y 轴自转。',
+                      port: 'ok', tags: ['spz', 'baseline'] },
+                    { id: 'debug-color', path: '../debug-color/index.html',
+                      title: 'Debug Coloring',
+                      desc: '世界法线 / 深度可视化,用于排查渲染异常。',
+                      port: 'ok', tags: ['spz', 'debug'] }
+                ]
+            },
+            {
+                id: 'B', title: 'B. 数据格式与编码', items: [
+                    { id: 'sogs', path: '../sogs/index.html',
+                      title: 'SOGS Compression',
+                      desc: 'SOGS 压缩格式演示(Sutro 塔场景)。',
+                      port: 'ok', tags: ['sogs', 'format'] },
+                    { id: 'extsplats', path: '../extsplats/index.html',
+                      title: 'ExtSplats Encoding',
+                      desc: 'ExtSplats 扩展编码(高精度位置)。',
+                      port: 'ok', tags: ['spz', 'ext-splats'] },
+                    { id: 'splat-texture', path: '../splat-texture/index.html',
+                      title: 'Splat Texture',
+                      desc: '用 2D 纹理驱动 splat 颜色。',
+                      port: 'ok', tags: ['spz', 'texture'] }
+                ]
+            },
+            {
+                id: 'C', title: 'C. 场景组合与视点', items: [
+                    { id: 'multiple-splats', path: '../multiple-splats/index.html',
+                      title: 'Multiple Splats',
+                      desc: '多 Splat 模型切换(菜单餐厅场景)。',
+                      port: 'ok', tags: ['spz', 'scene'] },
+                    { id: 'multiple-viewpoints', path: '../multiple-viewpoints/index.html',
+                      title: 'Multiple Viewpoints',
+                      desc: '分屏双相机同时渲染同一场景。',
+                      port: 'ok', tags: ['spz', 'camera'] }
+                ]
+            },
+            {
+                id: 'D', title: 'D. 交互与输入', items: [
+                    { id: 'interactivity', path: '../interactivity/index.html',
+                      title: 'Interactivity',
+                      desc: '基础点击拾取与相机交互。',
+                      port: 'ok', tags: ['spz', 'interactive'] },
+                    { id: 'raycasting', path: '../raycasting/index.html',
+                      title: 'Raycasting',
+                      desc: '射线拾取,多机器人可拖拽。',
+                      port: 'ok', tags: ['spz', 'picking'] },
+                    { id: 'splat-painter', path: '../splat-painter/index.html',
+                      title: 'Splat Painter',
+                      desc: 'GPU splat 画笔,实时编辑 splat 本身。',
+                      port: 'ok', tags: ['spz', 'gpu-edit'] },
+                    { id: 'interactive-holes', path: '../interactive-holes/index.html',
+                      title: 'Interactive Holes',
+                      desc: '点击挖洞(SplatEdit GPU 擦除)。',
+                      port: 'ok', tags: ['spz', 'gpu-edit'] },
+                    { id: 'interactive-deform', path: '../interactive-deform/index.html',
+                      title: 'Interactive Deform',
+                      desc: '点击拖拽让企鹅发生局部形变。',
+                      port: 'ok',
+                      note: '未纳入上游菜单', tags: ['spz', 'deform'] },
+                    { id: 'interactive-ripples', path: '../interactive-ripples/index.html',
+                      title: 'Interactive Ripples',
+                      desc: '点击企鹅表面产生涟漪波纹。',
+                      port: 'ok',
+                      note: '未纳入上游菜单', tags: ['spz', 'ripple'] },
+                    { id: 'mobile-joystick', path: '../mobile-joystick/index.html',
+                      title: 'Mobile Joystick',
+                      desc: '移动端虚拟摇杆 + 相机控制(加载 valley.spz)。',
+                      port: 'ok',
+                      note: '仅 isMobileDevice() 为 true 时显示摇杆 UI', tags: ['spz', 'input'] }
+                ]
+            },
+            {
+                id: 'E', title: 'E. 程序化与粒子', items: [
+                    { id: 'procedural-splats', path: '../procedural-splats/index.html',
+                      title: 'Procedural Splats',
+                      desc: '运行时生成 Sierpinski 金字塔 splat。',
+                      port: 'ok', tags: ['procedural', 'synth'] },
+                    { id: 'particle-animation', path: '../particle-animation/index.html',
+                      title: 'Particle Animation',
+                      desc: '粒子云动画(GPU 驱动)。',
+                      port: 'ok', tags: ['procedural', 'particles'] },
+                    { id: 'particle-simulation', path: '../particle-simulation/index.html',
+                      title: 'Particle Simulation',
+                      desc: '粒子物理模拟(雪花飘落,snow-street.spz 为背景)。',
+                      port: 'ok', tags: ['spz', 'procedural', 'particles'] }
+                ]
+            },
+            {
+                id: 'F', title: 'F. 视觉特效与转场', items: [
+                    { id: 'glsl', path: '../glsl/index.html',
+                      title: 'GLSL Shaders',
+                      desc: '自定义 GLSL 着色器入口(Dyno 驱动)。',
+                      port: 'ok', tags: ['spz', 'shader'] },
+                    { id: 'splat-reveal-effects', path: '../splat-reveal-effects/index.html',
+                      title: 'Reveal Effects',
+                      desc: 'Splat 显隐动画效果合集。',
+                      port: 'ok', tags: ['spz', 'fx'] },
+                    { id: 'splat-dissolve-effects', path: '../splat-dissolve-effects/index.html',
+                      title: 'Dissolve Effects',
+                      desc: 'Splat 溶解动画效果。',
+                      port: 'ok', tags: ['spz', 'fx'] },
+                    { id: 'splat-shader-effects', path: '../splat-shader-effects/index.html',
+                      title: 'Shader Effects',
+                      desc: 'Disintegrate / Morph 等 GLSL 预设特效。',
+                      port: 'warn',
+                      note: 'Dyno 复杂计算,低端 GPU 可能降帧', tags: ['spz', 'fx'] },
+                    { id: 'splat-transitions', path: '../splat-transitions/index.html',
+                      title: 'Splat Transitions',
+                      desc: '不同 splat 对象间过渡动画(多份 SPZ 同时加载)。',
+                      port: 'warn',
+                      note: '多份 SPZ 素材 + Dyno 变换,内存与 GPU 密集', tags: ['spz', 'fx'] },
+                    { id: 'splat-flow', path: '../splat-flow/index.html',
+                      title: 'Splat Flow',
+                      desc: 'Splat 流动过渡(Dyno GLSL 重计算)。',
+                      port: 'warn',
+                      note: 'Dyno GLSL 重计算,低端 GPU 可能降帧;未纳入上游菜单', tags: ['spz', 'fx'] }
+                ]
+            },
+            {
+                id: 'G', title: 'G. 光照 / 环境 / 后处理', items: [
+                    { id: 'envmap', path: '../envmap/index.html',
+                      title: 'Environment Map',
+                      desc: '环境贴图反射,Plastic / Metal 材质切换。',
+                      port: 'ok', tags: ['spz', 'lighting'] },
+                    { id: 'dynamic-lighting', path: '../dynamic-lighting/index.html',
+                      title: 'Dynamic Lighting',
+                      desc: '动态光照 + VFX 效果。',
+                      port: 'ok', tags: ['spz', 'lighting'] },
+                    { id: 'depth-of-field', path: '../depth-of-field/index.html',
+                      title: 'Depth of Field',
+                      desc: '景深效果,可调光圈大小与焦距。',
+                      port: 'ok', tags: ['spz', 'post-fx'] },
+                    { id: 'render-cube-depth', path: '../render-cube-depth/index.html',
+                      title: 'Render Cube Depth',
+                      desc: '立方深度贴图渲染,多种深度模式。',
+                      port: 'ok', tags: ['spz', 'depth'] },
+                    { id: 'stochastic', path: '../stochastic/index.html',
+                      title: 'Stochastic',
+                      desc: '随机采样降质渲染(性能优化模式)。',
+                      port: 'ok',
+                      note: '未纳入上游 index.html', tags: ['spz', 'sampling'] }
+                ]
+            },
+            {
+                id: 'H', title: 'H. LoD 与流式加载', items: [
+                    { id: 'nonlod', path: '../nonlod/index.html',
+                      title: 'Non-LoD + LoD',
+                      desc: '同场景中 LoD 与非 LoD splat 混用。',
+                      port: 'ok', tags: ['spz', 'lod'] },
+                    { id: 'lod-on-demand', path: '../lod-on-demand/index.html',
+                      title: 'LoD on Demand',
+                      desc: '运行时按需生成 LoD。',
+                      port: 'warn',
+                      note: '首次生成耗时,需预热', tags: ['spz', 'lod'] },
+                    { id: 'lod', path: '../lod/index.html',
+                      title: 'LoD (Full)',
+                      desc: 'OldSparkRenderer 路径下的 LoD 演示(加载 valley.spz + butterfly* 系列)。',
+                      port: 'warn',
+                      note: 'OldSparkRenderer 路径,未纳入上游菜单;源文件里有大量注释掉的本地 splat 路径,偏实验性', tags: ['spz', 'lod'] },
+                    { id: 'streaming-lod', path: '../streaming-lod/index.html',
+                      title: 'Streaming LoD',
+                      desc: '从远端逐块流式拉取 .RAD 文件。',
+                      port: 'warn',
+                      note: '需联网,RAD 源:storage.googleapis.com/forge-dev-public/', tags: ['rad', 'stream'] },
+                    { id: 'multi-lod', path: '../multi-lod/index.html',
+                      title: 'Multi Streaming LoD',
+                      desc: '100 个 Marble 模型同时流式 LoD。',
+                      port: 'warn',
+                      note: '需联网 + 100 个 RAD 并发请求,来源同上', tags: ['rad', 'stream'] }
+                ]
+            },
+            {
+                id: 'I', title: 'I. XR 与传送门', items: [
+                    { id: 'splat-portal', path: '../splat-portal/index.html',
+                      title: 'Splat Portal',
+                      desc: '双世界传送门(WebGLRenderTarget,非 XR)。',
+                      port: 'ok',
+                      note: '未纳入上游菜单', tags: ['spz', 'portal'] },
+                    { id: 'lofi', path: '../lofi/index.html',
+                      title: 'Lofi Worlds',
+                      desc: 'Lofi Worlds 生成器 + 音频(程序化构造,可选 XR,有 fallback)。',
+                      port: 'warn',
+                      note: 'XR 部分在 WebView 降级,非 XR 模式可跑', tags: ['procedural', 'xr'] },
+                    { id: 'newportal', path: '../newportal/index.html',
+                      title: 'New Portal',
+                      desc: '新传送门系统(SparkPortals API)。',
+                      port: 'warn',
+                      note: '未纳入上游菜单;XR 依赖待确认', tags: ['spz', 'portal'] }
+                    // 已移除:webxr / basic-xr / portal(port:'no',WebView 不暴露 navigator.xr)
+                    // 详见 sparkapp/doc/examples.md
+                ]
+            }
+            // 已移除:J. 工具应用(editor / viewer,依赖本地文件系统交互)
+        ];
+
+        const PORT_LABEL = { ok: '✅', warn: '⚠️' };
+
+        // Flat index for O(1) lookup by id.
+        const INDEX = {};
+        for (const g of GROUPS) {
+            for (const it of g.items) {
+                INDEX[it.id] = Object.assign({}, it, { groupId: g.id, groupTitle: g.title });
+            }
+        }
+
+        // Build a single card element.
+        function buildCard(it) {
+            const card = document.createElement('a');
+            card.className = 'card port-' + it.port;
+            card.dataset.id = it.id;
+            card.href = '#' + it.id;
+
+            const row = document.createElement('div');
+            row.className = 'card-row';
+            row.innerHTML =
+                '<span class="badge badge-' + it.port + '">' + PORT_LABEL[it.port] + '</span>' +
+                '<span class="card-title"></span>';
+            row.querySelector('.card-title').textContent = it.title;
+            card.appendChild(row);
+
+            const desc = document.createElement('div');
+            desc.className = 'card-desc';
+            desc.textContent = it.desc;
+            card.appendChild(desc);
+
+            if (it.note) {
+                const note = document.createElement('div');
+                note.className = 'card-note';
+                note.textContent = it.note;
+                card.appendChild(note);
+            }
+            if (it.tags && it.tags.length) {
+                const tagRow = document.createElement('div');
+                tagRow.className = 'card-tags';
+                for (const t of it.tags) {
+                    const tag = document.createElement('span');
+                    tag.className = 'tag';
+                    tag.textContent = t;
+                    tagRow.appendChild(tag);
+                }
+                card.appendChild(tagRow);
+            }
+            return card;
+        }
+
+        // Render the catalog into a container as grouped sections.
+        function renderCatalog(container) {
+            for (const g of GROUPS) {
+                const section = document.createElement('section');
+                section.className = 'group';
+
+                const head = document.createElement('div');
+                head.className = 'group-title';
+                head.innerHTML =
+                    '<span>' + g.title + '</span>' +
+                    '<span class="count">' + g.items.length + '</span>';
+                section.appendChild(head);
+
+                const cards = document.createElement('div');
+                cards.className = 'cards';
+                for (const it of g.items) cards.appendChild(buildCard(it));
+                section.appendChild(cards);
+
+                container.appendChild(section);
+            }
+        }
+
+        renderCatalog(document.getElementById('landingList'));
+        renderCatalog(document.getElementById('sidebarList'));
+
+        // Subtitle example count — derived from catalog to avoid hardcoded drift.
+        document.getElementById('exampleCount').textContent =
+            Object.keys(INDEX).length + ' 个示例 · ';
+
+        // ===== Format filter (landing-mode only) =====
+        // Filters landing cards by the "format" axis of an item's tags.
+        // Sidebar is intentionally unfiltered so the full catalog stays
+        // reachable during a benchmark run.
+        //
+        // FORMATS is an ordered whitelist of filterable tag values. A tag
+        // only participates in the filter if it appears here — so role tags
+        // like 'fx' / 'picking' / 'portal' never pollute the bar.
+        const FORMATS = [
+            { tag: 'spz',        label: 'SPZ' },
+            { tag: 'sogs',       label: 'SOGS' },
+            { tag: 'rad',        label: 'RAD' },
+            { tag: 'procedural', label: '程序化' }
+        ];
+
+        let activeFormat = 'all';
+
+        function itemMatchesFormat(item, fmt) {
+            if (fmt === 'all') return true;
+            return item.tags && item.tags.includes(fmt);
+        }
+
+        function buildFilterBar() {
+            const bar = document.getElementById('formatFilter');
+            const label = document.createElement('span');
+            label.className = 'filter-label';
+            label.textContent = '格式:';
+            bar.appendChild(label);
+
+            bar.appendChild(makeFilterBtn('all', '全部', Object.keys(INDEX).length));
+            for (const f of FORMATS) {
+                const count = Object.values(INDEX)
+                    .filter(it => itemMatchesFormat(it, f.tag)).length;
+                if (count === 0) continue; // Skip formats with no examples
+                bar.appendChild(makeFilterBtn(f.tag, f.label, count));
+            }
+            updateFilterButtons();
+        }
+
+        function makeFilterBtn(value, label, count) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'filter-btn';
+            btn.dataset.filter = value;
+            btn.innerHTML =
+                '<span class="l"></span><span class="n">' + count + '</span>';
+            btn.querySelector('.l').textContent = label;
+            btn.addEventListener('click', () => {
+                if (activeFormat === value) return;
+                activeFormat = value;
+                applyFilter();
+                updateFilterButtons();
+            });
+            return btn;
+        }
+
+        function updateFilterButtons() {
+            document.querySelectorAll('.filter-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.filter === activeFormat);
+            });
+        }
+
+        function applyFilter() {
+            const landing = document.getElementById('landingList');
+            landing.querySelectorAll('.card').forEach(c => {
+                const item = INDEX[c.dataset.id];
+                const match = item && itemMatchesFormat(item, activeFormat);
+                c.classList.toggle('hidden-by-filter', !match);
+            });
+            landing.querySelectorAll('.group').forEach(g => {
+                const hasVisible =
+                    g.querySelectorAll('.card:not(.hidden-by-filter)').length > 0;
+                g.classList.toggle('empty-by-filter', !hasVisible);
+            });
+        }
+
+        buildFilterBar();
+
+        // Hash routing + mode toggle.
+        const frameParent = document.querySelector('.content');
+        const mobileTitle = document.getElementById('mobileTitle');
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('overlay');
+        const hamburger = document.getElementById('hamburger');
+
+        function idFromHash() {
+            const h = window.location.hash.slice(1);
+            return INDEX[h] ? h : null;
+        }
+
+        // Before destroying an iframe, explicitly lose all WebGL contexts inside
+        // it. Android WebView can crash the GPU process if large texture / buffer
+        // allocations are released in bulk when the iframe is torn down. Calling
+        // WEBGL_lose_context on each canvas returns GPU resources synchronously
+        // and gives the driver a chance to settle before the document dies.
+        function releaseIframeGpu(frameEl) {
+            if (!frameEl) return;
+            try {
+                const win = frameEl.contentWindow;
+                if (!win || !win.document) return;
+                const canvases = win.document.querySelectorAll('canvas');
+                canvases.forEach(c => {
+                    // Prefer webgl2 then webgl. If the canvas already has a context
+                    // of one type, requesting the other returns null. If it has no
+                    // context yet (edge case), we create-then-lose a throwaway —
+                    // harmless and cheap compared to letting an iframe tear down
+                    // live contexts uncleanly.
+                    const gl = c.getContext('webgl2') || c.getContext('webgl');
+                    if (!gl) return;
+                    const ext = gl.getExtension('WEBGL_lose_context');
+                    if (ext) ext.loseContext();
+                });
+            } catch (e) {
+                // Cross-origin or navigated-away iframe — nothing we can do, and
+                // these usually clean up fine on their own.
+            }
+        }
+
+        // Create a fresh iframe element each time. Simply changing iframe.src
+        // leaks WebGL contexts and WASM workers in Android WebView — after 2-3
+        // switches the WebView process is killed by the OS. Replacing the whole
+        // element (plus explicit context loss above) forces the browser to tear
+        // down the old document and return GPU resources reliably.
+        function mountFrame(src) {
+            const oldFrame = document.getElementById('frame');
+            releaseIframeGpu(oldFrame);
+            const newFrame = document.createElement('iframe');
+            newFrame.id = 'frame';
+            newFrame.className = 'example-frame';
+            newFrame.setAttribute('allow', 'xr-spatial-tracking; accelerometer; gyroscope');
+            if (src) newFrame.src = src;
+            if (oldFrame) frameParent.replaceChild(newFrame, oldFrame);
+            else frameParent.appendChild(newFrame);
+        }
+
+        function setActive(id) {
+            document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+            const item = INDEX[id];
+            if (!item) {
+                mountFrame(null);
+                mobileTitle.textContent = 'sparkapp';
+                return;
+            }
+            document.querySelectorAll('.card[data-id="' + id + '"]').forEach(c => {
+                c.classList.add('active');
+            });
+            // Keep active card visible in sidebar.
+            const sidebarCard = document.querySelector('#sidebarList .card[data-id="' + id + '"]');
+            if (sidebarCard) sidebarCard.scrollIntoView({ block: 'nearest' });
+            mountFrame(item.path);
+            mobileTitle.textContent = item.title;
+        }
+
+        function updateMode() {
+            const id = idFromHash();
+            document.body.classList.toggle('landing', id === null);
+            setActive(id);
+        }
+
+        function openMobileMenu() {
+            sidebar.classList.add('open');
+            overlay.classList.add('open');
+        }
+        function closeMobileMenu() {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('open');
+        }
+
+        window.addEventListener('hashchange', () => {
+            updateMode();
+            closeMobileMenu();
+        });
+
+        // Sidebar card click → close mobile drawer after transition.
+        // Only act on actual card clicks — group titles and blank gaps are ignored.
+        document.getElementById('sidebarList').addEventListener('click', (e) => {
+            if (!e.target.closest('.card')) return;
+            setTimeout(closeMobileMenu, 120);
+        });
+
+        hamburger.addEventListener('click', () => {
+            if (sidebar.classList.contains('open')) closeMobileMenu();
+            else openMobileMenu();
+        });
+        overlay.addEventListener('click', closeMobileMenu);
+
+        // Initial mode based on current hash.
+        updateMode();
+    </script>
+</body>
+</html>

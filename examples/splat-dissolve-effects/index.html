@@ -16,8 +16,8 @@
 	<script type="importmap">
     {
       "imports": {
-        "three": "/examples/js/vendor/three/build/three.module.js",
-        "@sparkjsdev/spark": "/dist/spark.module.js"
+        "three": "../js/vendor/three/build/three.module.js",
+        "@sparkjsdev/spark": "../../dist/spark.module.js"
       }
     }
   </script>
@@ -25,7 +25,7 @@
 		import * as THREE from "three";
 		import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 		import { SparkRenderer, SplatMesh, dyno } from "@sparkjsdev/spark";
-		import { getAssetFileURL } from "/examples/js/get-asset-url.js";
+		import { getAssetFileURL } from "../js/get-asset-url.js";
 
 		const flyPos = new THREE.Vector3(0, 0, -0.5);
 		const scene = new THREE.Scene();

@@ -15,7 +15,8 @@
       {
         "imports": {
           "three": "../js/vendor/three/build/three.module.js",
-          "lil-gui": "/examples/js/vendor/lil-gui/dist/lil-gui.esm.js",
+          "three/addons/": "../js/vendor/three/examples/jsm/",
+          "lil-gui": "../js/vendor/lil-gui/dist/lil-gui.esm.js",
           "@sparkjsdev/spark": "../../dist/spark.module.js"
         }
       }
@@ -23,7 +24,7 @@
     <script type="module">
       import { dyno, SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
       import * as THREE from "three";
-      import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+      import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
       import { getAssetFileURL } from "../js/get-asset-url.js";
       import { GUI } from "lil-gui";
 

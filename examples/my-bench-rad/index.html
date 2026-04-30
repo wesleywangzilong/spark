@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+    <link rel="icon" href="data:,">
+    <title>spark · my-bench-rad</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overscroll-behavior: none;
+            -webkit-text-size-adjust: 100%;
+        }
+        body.canvas-mode {
+            background: #000;
+            overflow: hidden;
+        }
+        body.placeholder-mode {
+            background: #fffbfe;
+            color: #1c1b1f;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        canvas { display: block; }
+        #hud {
+            position: fixed;
+            top: 8px;
+            left: 8px;
+            padding: 6px 10px;
+            background: rgba(0, 0, 0, 0.55);
+            color: #0f0;
+            font-family: monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            border-radius: 4px;
+            pointer-events: none;
+            z-index: 10;
+            white-space: pre;
+        }
+        #err {
+            position: fixed;
+            top: 50%;
+            left: 8px;
+            right: 8px;
+            transform: translateY(-50%);
+            padding: 12px;
+            background: rgba(128, 0, 0, 0.85);
+            color: #fff;
+            font-family: monospace;
+            font-size: 12px;
+            border-radius: 4px;
+            z-index: 20;
+            display: none;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        main.placeholder {
+            padding: 24px 16px 32px;
+            max-width: 720px;
+            margin: 0 auto;
+            box-sizing: border-box;
+        }
+        main.placeholder h1 {
+            font-size: 18px;
+            font-weight: 500;
+            margin: 0 0 4px;
+            color: #6750a4;
+        }
+        main.placeholder .sub {
+            margin: 0 0 24px;
+            font-size: 13px;
+            color: #79747e;
+        }
+        main.placeholder .params {
+            background: #f3edf7;
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin: 0 0 20px;
+        }
+        main.placeholder .field {
+            display: flex;
+            margin: 6px 0;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        main.placeholder .field-key {
+            flex: 0 0 70px;
+            color: #6750a4;
+            font-weight: 500;
+        }
+        main.placeholder .field-val {
+            flex: 1;
+            color: #1c1b1f;
+            word-break: break-all;
+            font-family: monospace;
+        }
+        main.placeholder .field-val.missing { color: #b3261e; font-style: italic; }
+        main.placeholder .placeholder-note {
+            background: #ffd8e4;
+            color: #31111d;
+            padding: 14px 16px;
+            border-radius: 12px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        main.placeholder .placeholder-note b { color: #b3261e; }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "../js/vendor/three/build/three.module.js",
+        "three/addons/": "../js/vendor/three/examples/jsm/",
+        "@sparkjsdev/spark": "../../dist/spark.module.js"
+      }
+    }
+    </script>
+</head>
+<body>
+    <div id="err"></div>
+
+    <script type="module">
+        const params = new URLSearchParams(location.search);
+        const metric = params.get('metric');
+        const mode = params.get('mode');
+        const url = params.get('url');
+        const paged = params.get('paged') === 'true';
+        // Optional override of SparkRenderer.maxPagedSplats — used to
+        // experimentally shrink the paged pool and check whether RAD-stream
+        // PSS scales with pool capacity (see memory-Benchmark.md §8 pool
+        // sweep). Must be a multiple of 65536 (page size). When omitted,
+        // spark falls back to its device-adaptive default.
+        const maxPagedRaw = params.get('maxPaged');
+        const maxPagedSplats = maxPagedRaw ? parseInt(maxPagedRaw, 10) : null;
+
+        const err = document.getElementById('err');
+        const showError = (prefix, e) => {
+            err.style.display = 'block';
+            err.textContent = prefix + ': ' + (e?.stack || e?.message || String(e));
+        };
+        window.addEventListener('error', (e) => showError('ERROR', e.error || e));
+        window.addEventListener('unhandledrejection', (e) => showError('UNHANDLED', e.reason));
+
+        // The MEMORY metric runs the real Spark renderer; Java side polls
+        // performance.memory.usedJSHeapSize over the 60 s window plus its own
+        // process counters. The other four metrics (TTFP / SSIM / bytes /
+        // reconv) are still placeholder until their own logic lands.
+        if (metric === 'memory') {
+            await runMemoryRender();
+        } else {
+            renderPlaceholder();
+        }
+
+        // ---------- Mode A: real Spark render ----------
+        async function runMemoryRender() {
+            if (!url) {
+                document.body.classList.add('canvas-mode');
+                showError('CONFIG', 'metric=memory requires ?url= query parameter');
+                return;
+            }
+            document.body.classList.add('canvas-mode');
+
+            const hud = document.createElement('div');
+            hud.id = 'hud';
+            hud.textContent = 'loading splat...';
+            document.body.appendChild(hud);
+
+            // Lazy-import three / spark only when actually rendering — avoids
+            // pulling in spark.module.js (incl. inlined wasm) for the
+            // placeholder path used by the other 4 metrics.
+            const THREE = await import('three');
+            const { SplatMesh, SparkRenderer } = await import('@sparkjsdev/spark');
+
+            const scene = new THREE.Scene();
+            // Camera config copied from splat-painter (fov 50, near 0.01) —
+            // greyscale-bedroom is an indoor scene meant to be viewed from
+            // its centre, hence camera at origin and a tight near plane.
+            const camera = new THREE.PerspectiveCamera(
+                    50, window.innerWidth / window.innerHeight, 0.01, 1000);
+            camera.position.set(0, 0, 0);
+            // Default rotation = looking down -Z, same as lookAt(0, 0, -1).
+            // Don't call lookAt here because we drive rotation.y manually below;
+            // mixing the two leaves residual rotation on other axes.
+
+            const renderer = new THREE.WebGLRenderer({ antialias: false });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            const sparkOpts = { renderer };
+            if (maxPagedSplats != null && Number.isFinite(maxPagedSplats)) {
+                sparkOpts.maxPagedSplats = maxPagedSplats;
+            }
+            const spark = new SparkRenderer(sparkOpts);
+            scene.add(spark);
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            // Load splat. The X-axis 180° flip aligns Spark's training Y-down
+            // frame with three.js Y-up, same as my-single / my-hello.
+            // Position default (0,0,0) — camera sits inside / at the centre
+            // of the splat, mirroring splat-painter's setup.
+            const splat = new SplatMesh({ url, paged });
+            splat.quaternion.set(1, 0, 0, 0);
+            scene.add(splat);
+
+            // Camera path over a 60 s window (matches MEMORY_SAMPLE_DURATION_SEC):
+            //   - yaw 0 → π (180°): half-revolution; one revolution would
+            //     return to the start view and waste sample time.
+            //   - z   0 → -0.3 (≈ 30 cm assuming metric-ish units): very
+            //     slow forward drift to expose .rad chunks the static yaw
+            //     rotation wouldn't have visited. Far smaller than the room
+            //     so we shouldn't poke into sparse regions.
+            // Constant rates; rAF dt scales naturally. Java teardown stops
+            // the loop after 60 s so we don't bother capping.
+            const YAW_RATE_RAD_PER_MS     = Math.PI / 60000;
+            const FORWARD_RATE_UNITS_PER_MS = -0.3 / 60000;
+            let yaw = 0;
+            let lastTime = null;
+
+            // Java side pushes PSS values here every second via
+            // evaluateJavascript (BenchActivity.pushHudMemoryUpdate). Values
+            // are < 0 if the Java sampler hasn't fired yet (first second).
+            const benchHud = { javaHeapBytes: -1, nativePssBytes: -1, totalPssBytes: -1 };
+            window.__benchHudUpdate = (javaBytes, nativeBytes, totalBytes) => {
+                benchHud.javaHeapBytes = javaBytes;
+                benchHud.nativePssBytes = nativeBytes;
+                benchHud.totalPssBytes = totalBytes;
+            };
+            const formatMb = (b) => b > 0 ? (b / 1048576).toFixed(0) + ' MB' : '—';
+
+            renderer.setAnimationLoop((time) => {
+                if (lastTime !== null) {
+                    const dt = time - lastTime;
+                    yaw += YAW_RATE_RAD_PER_MS * dt;
+                    camera.position.z += FORWARD_RATE_UNITS_PER_MS * dt;
+                    camera.rotation.set(0, yaw, 0);
+                }
+                lastTime = time;
+
+                renderer.render(scene, camera);
+
+                const jsHeap = performance.memory
+                        ? (performance.memory.usedJSHeapSize / 1048576).toFixed(0) + ' MB'
+                        : '(unavailable)';
+                const active = spark.activeSplats || 0;
+                const poolLine = maxPagedSplats != null
+                        ? '\npool: ' + maxPagedSplats.toLocaleString() + ' (override)'
+                        : '\npool: device-default';
+                hud.textContent =
+                    'metric: memory · mode: ' + (mode || '?') +
+                    '\nfile: ' + (url.split('?')[0].split('/').pop()) +
+                    '\nstreaming: ' + paged +
+                    poolLine +
+                    '\nyaw: ' + (yaw * 180 / Math.PI).toFixed(0) + '°' +
+                    '  z: ' + camera.position.z.toFixed(2) +
+                    '\n──── memory ────' +
+                    '\nPSS:    ' + formatMb(benchHud.totalPssBytes) +
+                    '\nJS:     ' + jsHeap +
+                    '\nJava:   ' + formatMb(benchHud.javaHeapBytes) +
+                    '\nNative: ' + formatMb(benchHud.nativePssBytes) +
+                    '\nactive splats: ' + active.toLocaleString();
+            });
+        }
+
+        // ---------- Mode B: placeholder for unimplemented metrics ----------
+        function renderPlaceholder() {
+            document.body.classList.add('placeholder-mode');
+            const main = document.createElement('main');
+            main.className = 'placeholder';
+            main.innerHTML =
+                '<h1>📊 my-bench-rad — 占位</h1>' +
+                '<p class="sub">该 metric 尚未实现 · 仅 memory 已接入真实渲染</p>' +
+                '<div class="params" id="params"></div>' +
+                '<div class="placeholder-note">' +
+                '<b>占位状态。</b>本页只显示 query string。' +
+                '<br>真实的 TTFP / SSIM(t) / 累计字节 / T_reconv 采集逻辑稍后接入(回到 ' +
+                '<code>bench-rad-streaming.md</code> §4 的 TTFP 决策点 1-4 推进)。' +
+                '</div>';
+            document.body.appendChild(main);
+
+            const fields = ['metric', 'mode', 'url', 'paged'];
+            const root = document.getElementById('params');
+            for (const f of fields) {
+                const v = params.get(f);
+                const row = document.createElement('div');
+                row.className = 'field';
+                const key = document.createElement('div');
+                key.className = 'field-key';
+                key.textContent = f;
+                const val = document.createElement('div');
+                val.className = 'field-val' + (v == null ? ' missing' : '');
+                val.textContent = v == null ? '(missing)' : v;
+                row.appendChild(key);
+                row.appendChild(val);
+                root.appendChild(row);
+            }
+        }
+    </script>
+</body>
+</html>

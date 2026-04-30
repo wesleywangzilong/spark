@@ -116,9 +116,57 @@
             margin-left: 2.5rem;
           }
         }
+        /* sparkapp banner — local fork addition, points to grouped menu. */
+        .sparkapp-banner {
+          display: flex;
+          align-items: center;
+          gap: 0.9rem;
+          background: #0a0a0a;
+          border: 2px solid #0f0;
+          border-radius: 6px;
+          padding: 0.9rem 1.1rem;
+          margin-bottom: 1.5rem;
+          text-decoration: none;
+          font-family: monospace;
+          color: #0f0;
+          transition: background 0.1s;
+        }
+        .sparkapp-banner:hover { background: #141414; }
+        .sparkapp-banner .tag {
+          background: #0f0;
+          color: #0a0a0a;
+          padding: 0.15rem 0.55rem;
+          font-size: 0.85rem;
+          font-weight: bold;
+          border-radius: 3px;
+          letter-spacing: 0.02em;
+        }
+        .sparkapp-banner .text {
+          flex: 1;
+          font-size: 1.05rem;
+          line-height: 1.25;
+        }
+        .sparkapp-banner .text .sub {
+          display: block;
+          font-size: 0.75rem;
+          color: #0a0;
+          margin-top: 0.2rem;
+          opacity: 0.85;
+        }
+        .sparkapp-banner .arrow {
+          font-size: 1.3rem;
+        }
       </style>
     </head>
     <body>
+      <a class="sparkapp-banner" href="/examples/my-menu/index.html">
+        <span class="tag">sparkapp</span>
+        <span class="text">
+          进入分组菜单
+          <span class="sub">42 个示例按功能分组 · 标注 Android WebView 可移植性</span>
+        </span>
+        <span class="arrow">&rarr;</span>
+      </a>
       <header class="header">
         <h1>Spark Examples</h1>
         <ul id="resources" class="resources">

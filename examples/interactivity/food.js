@@ -72,4 +72,4 @@ export const FOOD_ASSETS = [
     offsetY: 0.04,
   },
 ];
-export const FOOD_URL = "/examples/assets/splats/food/";
+export const FOOD_URL = "../assets/splats/food/";

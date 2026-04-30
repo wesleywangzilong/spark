@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+    <link rel="icon" href="data:,">
+    <title>spark · my-hello</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            overflow: hidden;
+            height: 100%;
+            overscroll-behavior: none;
+        }
+        canvas { display: block; }
+        #hud {
+            position: fixed;
+            top: 8px;
+            left: 8px;
+            padding: 6px 10px;
+            background: rgba(0, 0, 0, 0.55);
+            color: #0f0;
+            font-family: monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            border-radius: 4px;
+            pointer-events: none;
+            z-index: 10;
+            white-space: pre;
+        }
+        #err {
+            position: fixed;
+            top: 50%;
+            left: 8px;
+            right: 8px;
+            transform: translateY(-50%);
+            padding: 12px;
+            background: rgba(128, 0, 0, 0.85);
+            color: #fff;
+            font-family: monospace;
+            font-size: 12px;
+            border-radius: 4px;
+            z-index: 20;
+            display: none;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "../js/vendor/three/build/three.module.js",
+        "@sparkjsdev/spark": "../../dist/spark.module.js"
+      }
+    }
+    </script>
+</head>
+<body>
+    <div id="hud">loading...</div>
+    <div id="err"></div>
+    <script type="module">
+        import * as THREE from "three";
+        import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
+        import { getAssetFileURL } from "../js/get-asset-url.js";
+
+        // Runtime-error overlay. Module-load errors (bad importmap, missing
+        // asset route) fire before these listeners attach and will only show
+        // in devtools — acceptable for a benchmark page with chrome://inspect.
+        const hud = document.getElementById('hud');
+        const err = document.getElementById('err');
+        const showError = (prefix, e) => {
+            err.style.display = 'block';
+            err.textContent = prefix + ': ' + (e?.stack || e?.message || String(e));
+        };
+        window.addEventListener('error', (e) => showError('ERROR', e.error || e));
+        window.addEventListener('unhandledrejection', (e) => showError('UNHANDLED', e.reason));
+
+        // --- Scene setup (mirrors upstream hello-world) ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+        // Benchmark-friendly renderer: antialias off + DPR clamp to 2 so we
+        // measure a consistent pixel budget across devices with wildly different
+        // native DPRs (e.g. Mate70 ≈ 3.0 would 2.25x the fragment cost).
+        const renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const spark = new SparkRenderer({ renderer });
+        scene.add(spark);
+
+        window.addEventListener('resize', onWindowResize, false);
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        const splatURL = await getAssetFileURL("butterfly.spz");
+        const butterfly = new SplatMesh({ url: splatURL });
+        butterfly.quaternion.set(1, 0, 0, 0);
+        butterfly.position.set(0, 0, -3);
+        scene.add(butterfly);
+
+        // --- FPS HUD (addition over upstream hello-world) ---
+        let lastTime;
+        let frames = 0;
+        let fpsWindowStart = performance.now();
+
+        renderer.setAnimationLoop(function animate(time) {
+            const deltaTime = time - (lastTime || time);
+            lastTime = time;
+            renderer.render(scene, camera);
+            butterfly.rotation.y += deltaTime / 2500;
+
+            frames++;
+            const elapsed = time - fpsWindowStart;
+            if (elapsed >= 500) {
+                const fps = Math.round((frames * 1000) / elapsed);
+                frames = 0;
+                fpsWindowStart = time;
+                hud.textContent =
+                    'FPS: ' + fps +
+                    '\nres: ' + renderer.domElement.width + 'x' + renderer.domElement.height +
+                    '\ndpr: ' + renderer.getPixelRatio().toFixed(2);
+            }
+        });
+    </script>
+</body>
+</html>
