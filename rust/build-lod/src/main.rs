@@ -54,6 +54,7 @@ enum BuildLodMethod {
 #[derive(Clone, Debug, Default)]
 struct BuildLodOptions {
     unlod: bool,
+    no_lod: bool,
     tsplat: BuildLodTsplat,
     method: BuildLodMethod,
     max_sh: Option<usize>,
@@ -209,38 +210,44 @@ fn process_file_lod_tsplat<TS: SplatReceiver + TsplatArray + SplatGetter>(filena
         description.insert("unlod".to_string(), serde_json::Value::Bool(true));
     }
 
-    let method = match options.method.clone() {
-        BuildLodMethod::Quick => BuildLodMethod::TinyLod { lod_base: 1.5 },
-        BuildLodMethod::Quality => BuildLodMethod::BhattLod { lod_base: 1.75 },
-        other => other,
-    };
-    description.insert("method".to_string(), serde_json::Value::String(format!("{:?}", method)));
+    if !options.no_lod {
+        let method = match options.method.clone() {
+            BuildLodMethod::Quick => BuildLodMethod::TinyLod { lod_base: 1.5 },
+            BuildLodMethod::Quality => BuildLodMethod::BhattLod { lod_base: 1.75 },
+            other => other,
+        };
+        description.insert("method".to_string(), serde_json::Value::String(format!("{:?}", method)));
 
-    let start_time = std::time::Instant::now();
+        let start_time = std::time::Instant::now();
 
-    match method {
-        BuildLodMethod::TinyLod { lod_base } => {
-            let merge_filter = false;
-            tiny_lod::compute_lod_tree(&mut splats, lod_base, merge_filter, |s| println!("{}", s));
-        },
-        BuildLodMethod::BhattLod { lod_base } => {
-            bhatt_lod::compute_lod_tree(&mut splats, lod_base, |s| println!("{}", s));
-        },
-        _ => unreachable!()
+        match method {
+            BuildLodMethod::TinyLod { lod_base } => {
+                let merge_filter = false;
+                tiny_lod::compute_lod_tree(&mut splats, lod_base, merge_filter, |s| println!("{}", s));
+            },
+            BuildLodMethod::BhattLod { lod_base } => {
+                bhatt_lod::compute_lod_tree(&mut splats, lod_base, |s| println!("{}", s));
+            },
+            _ => unreachable!()
+        }
+
+        let lod_duration = start_time.elapsed();
+        description.insert("lod_duration".to_string(), serde_json::Number::from_f64(lod_duration.as_secs_f64()).into());
+
+        let final_splat_count = splats.len();
+        description.insert("final_splat_count".to_string(), serde_json::Value::Number(final_splat_count.into()));
+
+        let start_time = std::time::Instant::now();
+
+        chunk_tree::chunk_tree(&mut splats, 0, |s| println!("{}", s));
+
+        let chunk_duration = start_time.elapsed();
+        description.insert("chunk_duration".to_string(), serde_json::Number::from_f64(chunk_duration.as_secs_f64()).into());
+    } else {
+        println!("--no-lod: skipping LoD tree + chunk_tree, writing flat output");
+        description.insert("no_lod".to_string(), serde_json::Value::Bool(true));
+        description.insert("final_splat_count".to_string(), serde_json::Value::Number(splats.len().into()));
     }
-
-    let lod_duration = start_time.elapsed();
-    description.insert("lod_duration".to_string(), serde_json::Number::from_f64(lod_duration.as_secs_f64()).into());
-
-    let final_splat_count = splats.len();
-    description.insert("final_splat_count".to_string(), serde_json::Value::Number(final_splat_count.into()));
-
-    let start_time = std::time::Instant::now();
-
-    chunk_tree::chunk_tree(&mut splats, 0, |s| println!("{}", s));
-
-    let chunk_duration = start_time.elapsed();
-    description.insert("chunk_duration".to_string(), serde_json::Number::from_f64(chunk_duration.as_secs_f64()).into());
 
     let num_sh = TsplatArray::max_sh_degree(&splats).min(options.max_sh.unwrap_or(3));
     let mut sh_clusters = None;
@@ -295,7 +302,9 @@ fn process_file_lod_tsplat<TS: SplatReceiver + TsplatArray + SplatGetter>(filena
         }
     }
 
-    splats.encode_lod_opacity();
+    if !options.no_lod {
+        splats.encode_lod_opacity();
+    }
 
     if options.inflate {
         for i in 0..splats.len() {
@@ -402,6 +411,7 @@ fn process_file_lod_tsplat<TS: SplatReceiver + TsplatArray + SplatGetter>(filena
 fn show_usage_exit() {
     eprintln!("Usage: build-lod");
     eprintln!("  [--unlod]                                       // Remove LoD nodes with children from file");
+    eprintln!("  [--no-lod]                                      // Skip LoD tree compute + chunk_tree (output flat splats; combine with --unlod for .rad -> flat .spz)");
     eprintln!("  [--csplat] [--gsplat]                           // Use compact (csplat) or higher-precision (default gsplat) splat encoding");
     eprintln!("  [--quick] [--quality]                           // Use quick (tiny-lod) or quality (bhatt-lod) LoD method (default quality)");
     eprintln!("  [--tiny-lod[=<base>]] [--bhatt-lod[=<base>]]    // Use tiny-lod (default base 1.5) or bhatt-lod (default base 1.75) LoD method");
@@ -429,6 +439,11 @@ fn main() {
         if arg == "--unlod" {
             options.unlod = true;
             println!("Using --unlod: Un-LoD file by removing nodes with children");
+            continue;
+        }
+        if arg == "--no-lod" {
+            options.no_lod = true;
+            println!("Using --no-lod: skip LoD tree compute + chunk_tree, write flat output");
             continue;
         }
         if arg == "--csplat" {
